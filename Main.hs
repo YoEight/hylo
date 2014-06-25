@@ -3,4 +3,4 @@ module Main where
 import Data.Hylo
 
 main :: IO ()
-main = print $ runHylo (source 1 100000000000000) adding
+main = print $ runHylo (after (fromTo 1 10000) (fromTo 10001 20000)) adding

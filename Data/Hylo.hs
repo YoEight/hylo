@@ -3,8 +3,11 @@
 {-# LANGUAGE BangPatterns #-}
 module Data.Hylo where
 
+import Control.Monad
+import Data.Monoid
+
 data Ana a where
-    Ana :: b -> (b -> Maybe (a, b)) -> Ana a
+    Ana :: s -> (s -> Maybe (a, s)) -> Ana a
 
 data Cata a b = Cata b (a -> b -> b)
 
@@ -21,8 +24,8 @@ runHylo (Ana s nu) (Cata start mu)
       loop Nothing b      = b
       loop (Just (a,s')) b = let !b' = mu a b in loop (nu s') b'
 
-source :: Integer -> Integer -> Ana Integer
-source from to = Ana from go where
+fromTo :: Integer -> Integer -> Ana Integer
+fromTo from to = Ana from go where
   go i
       | i > to    = Nothing
       | otherwise = Just (i, i+1)
@@ -30,31 +33,23 @@ source from to = Ana from go where
 adding :: Cata Integer Integer
 adding = Cata 0 (+)
 
-
 filtering :: (a -> Bool) -> Cata a b -> Cata a b
 filtering k (Cata b f)
     = Cata b $ \a b -> if k a then f a b else b
+
+foldMapping :: Monoid m => (a -> m) -> Cata a m
+foldMapping f = Cata mempty go where go a b = mappend b (f a)
 
 contramap :: (b -> a) -> Cata a c -> Cata b c
 contramap k (Cata c f)
     = Cata c $ \b c' -> f (k b) c'
 
--- cons :: a -> b -> Cons a b
--- cons a b = Cons $ \_ onCons -> onCons a b
+after :: Ana a -> Ana a -> Ana a
+after (Ana starta ka) (Ana startb kb) = Ana (False, starta, startb) go where
+  go (end, sa, sb)
+      | end       = fmap (onRight sa) (kb sb)
+      | otherwise = fmap (onLeft sb) (ka sa) `mplus`
+                    fmap (onRight sa) (kb sb)
 
--- nil :: Cons a b
--- nil = Cons $ \onNil _ -> onNil
-
--- unCons :: x -> (a -> b -> x) -> Cons a b -> x
--- unCons onNil onCons (Cons k) = k onNil onCons
-
--- fromTo_mu_adding :: Integer -> Integer -> Acc
--- fromTo_mu_adding from to = hylo (source from to) crush from where
-
--- source :: Integer -> Integer -> Integer -> Cons Integer Integer
--- source from to !i
---     | i > to    = nil
---     | otherwise = let x = i+1 in cons i x
-
--- crush :: Cons Integer Acc -> Acc
--- crush xs = unCons (Acc 0) (\i (Acc a) -> let x = i+a in Acc x) xs
+  onRight sa (b, sb') = (b, (True, sa, sb'))
+  onLeft sb (a, sa')  = (a, (False, sa', sb))
