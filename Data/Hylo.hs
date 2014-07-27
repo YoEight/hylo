@@ -161,6 +161,17 @@ interspersed a (Unfold sX anaX)
                 Nothing -> Nothing
 
 --------------------------------------------------------------------------------
+scanned :: (b -> a -> b) -> b -> Unfold a -> Unfold b
+scanned k seed (Unfold sX anaX)
+    = Unfold (Pair (Left seed) sX) ana
+  where
+    ana (Pair (Left b) x) = Just (b, Pair (Right b) x)
+    ana (Pair (Right b) x)
+        = case anaX x of
+              Nothing     -> Nothing
+              Just (a,x') -> let !b' = k b a in Just (b', Pair (Right b') x')
+
+--------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
 hylo (Unfold sA ana) (Fold cata sB doneB)
     = loop sB (ana sA)
