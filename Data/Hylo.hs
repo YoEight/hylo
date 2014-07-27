@@ -184,6 +184,15 @@ dropped n (Unfold sX anaX)
                 Just (_, x') -> ana (Pair (succ i) x')
 
 --------------------------------------------------------------------------------
+takenWhile :: (a -> Bool) -> Unfold a -> Unfold a
+takenWhile k (Unfold sX anaX)
+    = Unfold sX ana
+  where
+    ana x
+        | Just (a, x') <- anaX x, k a = Just (a, x')
+        | otherwise                   = Nothing
+
+--------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
 hylo (Unfold sA ana) (Fold cata sB doneB)
     = loop sB (ana sA)
