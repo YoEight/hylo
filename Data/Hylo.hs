@@ -193,6 +193,19 @@ takenWhile k (Unfold sX anaX)
         | otherwise                   = Nothing
 
 --------------------------------------------------------------------------------
+droppedWhile :: (a -> Bool) -> Unfold a -> Unfold a
+droppedWhile k (Unfold sX anaX)
+    = Unfold (Pair True sX) ana
+  where
+    ana (Pair False x) = fmap (\(a,x') -> (a, Pair False x')) (anaX x)
+    ana (Pair _ x)
+        = case anaX x of
+              Nothing     -> Nothing
+              Just (a,x')
+                  | k a       -> ana (Pair True x')
+                  | otherwise -> Just (a, Pair False x')
+
+--------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
 hylo (Unfold sA ana) (Fold cata sB doneB)
     = loop sB (ana sA)
