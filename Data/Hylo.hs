@@ -16,6 +16,8 @@ module Data.Hylo where
 --------------------------------------------------------------------------------
 import Control.Applicative
 import Data.Foldable (Foldable, foldMap, toList)
+
+--------------------------------------------------------------------------------
 import qualified Data.List.NonEmpty as NE
 import Data.Monoid (Monoid(..))
 import Data.Semigroup
@@ -140,7 +142,25 @@ filtered k (Unfold sA anaA)
                 | otherwise -> ana x'
             _ -> Nothing
 
--- --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+data InterState a
+    = State1
+    | State2
+    | State3 a
+
+interspersed :: a -> Unfold a -> Unfold a
+interspersed a (Unfold sX anaX)
+    = Unfold (Pair State1 sX) ana where
+  ana (Pair st x)
+      = case st of
+            State3 a' -> Just (a', Pair State2 x)
+            _         -> case anaX x of
+                Just (a', x')
+                    | State1 <- st -> Just (a', Pair State2 x')
+                    | State2 <- st -> Just (a, Pair (State3 a') x')
+                Nothing -> Nothing
+
+--------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
 hylo (Unfold sA ana) (Fold cata sB doneB)
     = loop sB (ana sA)
