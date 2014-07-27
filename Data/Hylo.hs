@@ -172,6 +172,18 @@ scanned k seed (Unfold sX anaX)
               Just (a,x') -> let !b' = k b a in Just (b', Pair (Right b') x')
 
 --------------------------------------------------------------------------------
+dropped :: Int -> Unfold a -> Unfold a
+dropped n (Unfold sX anaX)
+    = Unfold (Pair 1 sX) ana
+  where
+    ana (Pair i x)
+        | i > n = fmap (\(a, x') -> (a, Pair i x')) (anaX x)
+        | otherwise =
+            case anaX x of
+                Nothing      -> Nothing
+                Just (_, x') -> ana (Pair (succ i) x')
+
+--------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
 hylo (Unfold sA ana) (Fold cata sB doneB)
     = loop sB (ana sA)
