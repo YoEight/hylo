@@ -1,55 +1,149 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE RankNTypes   #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE ExistentialQuantification #-}
+--------------------------------------------------------------------------------
+-- |
+-- Module : Web.Pandoc
+-- Copyright : (C) 2014 Yorick Laupa
+-- License : (see the file LICENSE)
+--
+-- Maintainer : Yorick Laupa <yo.eight@gmail.com>
+-- Stability : provisional
+-- Portability : non-portable
+--
+--------------------------------------------------------------------------------
 module Data.Hylo where
 
-import Control.Monad
-import Data.Monoid
+--------------------------------------------------------------------------------
+import Control.Applicative
+import Data.Foldable (Foldable, foldMap, toList)
+import qualified Data.List.NonEmpty as NE
+import Data.Monoid (Monoid(..))
+import Data.Semigroup
+import Data.Semigroup.Foldable
 
-data Ana a where
-    Ana :: s -> (s -> Maybe (a, s)) -> Ana a
+--------------------------------------------------------------------------------
+import Control.Foldl hiding (head)
 
-data Cata a b = Cata b (a -> b -> b)
+--------------------------------------------------------------------------------
+data Pair a b = Pair !a !b
 
-instance Functor Ana where
-    fmap f (Ana b k)
-        = Ana b $ \b' ->
-            case k b' of
-                Nothing      -> Nothing
-                Just (a,b'') -> Just (f a, b'')
+--------------------------------------------------------------------------------
+data Unfold a = forall x. Unfold x (x -> Maybe (a, x))
 
-runHylo :: Ana a -> Cata a b -> b
-runHylo (Ana s nu) (Cata start mu)
-    = loop (nu s) start where
-      loop Nothing b      = b
-      loop (Just (a,s')) b = let !b' = mu a b in loop (nu s') b'
+--------------------------------------------------------------------------------
+instance Functor Unfold where
+    fmap f (Unfold x ana)
+        = Unfold x $ \x' ->
+              do (a, x'') <- ana x'
+                 return (f a, x'')
 
-fromTo :: Integer -> Integer -> Ana Integer
-fromTo from to = Ana from go where
-  go i
-      | i > to    = Nothing
-      | otherwise = Just (i, i+1)
+--------------------------------------------------------------------------------
+instance Applicative Unfold where
+    pure a = Unfold () $ \() -> Just (a, ())
 
-adding :: Cata Integer Integer
-adding = Cata 0 (+)
+    Unfold sF anaF <*> Unfold sA anaA
+        = Unfold (Pair sF sA) $ \(Pair xF xA) ->
+              do (f, xF') <- anaF xF
+                 (a, xA') <- anaA xA
+                 return (f a, Pair xF' xA')
 
-filtering :: (a -> Bool) -> Cata a b -> Cata a b
-filtering k (Cata b f)
-    = Cata b $ \a b -> if k a then f a b else b
+--------------------------------------------------------------------------------
+instance Foldable Unfold where
+    foldMap k (Unfold s ana)
+        = loop mempty (ana s)
+      where
+        loop !m cs
+            = case cs of
+                Nothing -> m
+                Just (a, s') -> loop (mappend m (k a)) (ana s')
 
-foldMapping :: Monoid m => (a -> m) -> Cata a m
-foldMapping f = Cata mempty go where go a b = mappend b (f a)
+--------------------------------------------------------------------------------
+instance Monoid a => Monoid (Unfold a) where
+    mempty = pure mempty
+    mappend = liftA2 mappend
 
-contramap :: (b -> a) -> Cata a c -> Cata b c
-contramap k (Cata c f)
-    = Cata c $ \b c' -> f (k b) c'
+--------------------------------------------------------------------------------
+after :: Unfold a -> Unfold a -> Unfold a
+after (Unfold sX anaX) (Unfold sV anaV)
+    = Unfold (Left sX) ana
+  where
+    ana (Left x) =
+        case anaX x of
+            Nothing       -> ana $ Right sV
+            Just (la, x') -> Just (la, Left x')
+    ana (Right v) =
+        case anaV v of
+            Nothing       -> Nothing
+            Just (ra, v') -> Just (ra, Right v')
 
-after :: Ana a -> Ana a -> Ana a
-after (Ana starta ka) (Ana startb kb) = Ana (False, starta, startb) go where
-  go (end, sa, sb)
-      | end       = fmap (onRight sa) (kb sb)
-      | otherwise = fmap (onLeft sb) (ka sa) `mplus`
-                    fmap (onRight sa) (kb sb)
+--------------------------------------------------------------------------------
+source :: Foldable f => f a -> Unfold a
+source fa
+    = Unfold (toList fa) $ \xs ->
+          case xs of
+              a:as -> Just (a, as)
+              []   -> Nothing
 
-  onRight sa (b, sb') = (b, (True, sa, sb'))
-  onLeft sb (a, sa')  = (a, (False, sa', sb))
+--------------------------------------------------------------------------------
+repeated :: a -> Unfold a
+repeated a = Unfold a (const $ Just (a,a))
+
+--------------------------------------------------------------------------------
+cycled :: Foldable1 f => f a -> Unfold a
+cycled fa
+    = Unfold s $ \xs ->
+          case xs of
+              []  -> Just (head s, tail s)
+              h:t -> Just (h, t)
+  where
+    s = toList fa
+
+--------------------------------------------------------------------------------
+taken :: Int -> Unfold a -> Unfold a
+taken n (Unfold x anaX) = Unfold (Pair 1 x) ana where
+  ana (Pair i x')
+      | i > n     = Nothing
+      | otherwise =
+          case anaX x' of
+              Nothing       -> Nothing
+              Just (a, x'') -> Just (a, Pair (succ i) x'')
+
+--------------------------------------------------------------------------------
+replicated :: Int -> a -> Unfold a
+replicated n a = Unfold 0 ana where
+  ana x | x > n     = Nothing
+        | otherwise = Just (a, succ x)
+
+--------------------------------------------------------------------------------
+iterated :: (a -> a) -> a -> Unfold a
+iterated k a = Unfold a $ \a' -> Just (a', k a')
+
+--------------------------------------------------------------------------------
+enumerated :: (Enum a, Ord a) => a -> a -> Unfold a
+enumerated from to = Unfold from ana where
+  ana i | i <= to   = Just (i, succ i)
+        | otherwise = Nothing
+
+--------------------------------------------------------------------------------
+zipped :: Unfold a -> Unfold b -> Unfold (a, b)
+zipped a b = (,) <$> a <*> b
+
+--------------------------------------------------------------------------------
+filtered :: (a -> Bool) -> Unfold a -> Unfold a
+filtered k (Unfold sA anaA)
+    = Unfold sA ana
+  where
+    ana x
+        = case anaA x of
+            Just (a, x')
+                | k a       -> Just (a, x')
+                | otherwise -> ana x'
+            _ -> Nothing
+
+-- --------------------------------------------------------------------------------
+hylo :: Unfold a -> Fold a b -> b
+hylo (Unfold sA ana) (Fold cata sB doneB)
+    = loop sB (ana sA)
+  where
+    loop xB Nothing        = doneB xB
+    loop xB (Just (a, xA)) = let !xB' = cata xB a in loop xB' (ana xA)

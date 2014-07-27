@@ -21,7 +21,10 @@ executable hylo
   --exposed-modules:     Data.Hylo
   other-modules: Data.Hylo
   -- other-extensions:
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7 && <5
+                       , foldl >= 1.0.0 && < 2
+                       , semigroups >= 0.5 && < 1
+                       , semigroupoids >= 4 && < 5
   -- hs-source-dirs:
   default-language:    Haskell2010
-  ghc-options: -O2 -rtsopts -prof
+  ghc-options: -O2
