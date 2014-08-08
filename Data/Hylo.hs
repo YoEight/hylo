@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes                #-}
 --------------------------------------------------------------------------------
 -- |
 -- Module : Web.Pandoc
@@ -31,6 +32,9 @@ data Pair a b = Pair !a !b
 
 --------------------------------------------------------------------------------
 data Unfold a = forall x. Unfold x (x -> Maybe (a, x))
+
+--------------------------------------------------------------------------------
+data UnfoldM m a = forall x. UnfoldM (m x) (x -> m (Maybe (a, x)))
 
 --------------------------------------------------------------------------------
 instance Functor Unfold where
@@ -204,6 +208,20 @@ droppedWhile k (Unfold sX anaX)
               Just (a,x')
                   | k a       -> ana (Pair True x')
                   | otherwise -> Just (a, Pair False x')
+
+--------------------------------------------------------------------------------
+transform :: (forall x. x -> m x)
+          -> (forall x. m x -> (x -> Maybe (a, x)) -> Maybe (a, m x))
+          -> Unfold a
+          -> Unfold a
+transform lf kf (Unfold sX anaX)
+    = Unfold (lf sX) go
+  where
+    go mx = kf mx anaX
+
+--------------------------------------------------------------------------------
+adapt :: Monad m => UnfoldM m a -> Unfold a -> UnfoldM m a
+adapt (UnfoldM mSx anaMx) (Unfold sX anaX)
 
 --------------------------------------------------------------------------------
 hylo :: Unfold a -> Fold a b -> b
